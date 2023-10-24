@@ -54,6 +54,7 @@ type backend interface {
 	// in the given set in order to update state from the specified parent to
 	// the specified root.
 	Update(root common.Hash, parent common.Hash, nodes *trienode.MergedNodeSet) error
+	UpdateAndReferenceRoot(root common.Hash, parent common.Hash, nodes *trienode.MergedNodeSet) error
 
 	// Commit writes all relevant trie nodes belonging to the specified state
 	// to disk. Report specifies whether logs will be displayed in info level.
@@ -63,21 +64,28 @@ type backend interface {
 	Close() error
 }
 
+type cache interface {
+	HasGet([]byte, []byte) ([]byte, bool)
+	Del([]byte)
+	Set([]byte, []byte)
+	SaveToFileConcurrent(dir string, threads int) error
+}
+
 // Database is the wrapper of the underlying backend which is shared by different
 // types of node backend as an entrypoint. It's responsible for all interactions
 // relevant with trie nodes and node preimages.
 type Database struct {
-	config    *Config          // Configuration for trie database
-	diskdb    ethdb.Database   // Persistent database to store the snapshot
-	cleans    *fastcache.Cache // Megabytes permitted using for read caches
-	preimages *preimageStore   // The store for caching preimages
-	backend   backend          // The backend for managing trie nodes
+	config    *Config        // Configuration for trie database
+	diskdb    ethdb.Database // Persistent database to store the snapshot
+	cleans    cache          // Megabytes permitted using for read caches
+	preimages *preimageStore // The store for caching preimages
+	backend   backend        // The backend for managing trie nodes
 }
 
 // prepare initializes the database with provided configs, but the
 // database backend is still left as nil.
 func prepare(diskdb ethdb.Database, config *Config) *Database {
-	var cleans *fastcache.Cache
+	var cleans cache
 	if config != nil && config.Cache > 0 {
 		if config.Journal == "" {
 			cleans = fastcache.New(config.Cache * 1024 * 1024)
@@ -112,6 +120,14 @@ func NewDatabaseWithConfig(diskdb ethdb.Database, config *Config) *Database {
 	return db
 }
 
+func NewDatabaseWithCache(diskdb ethdb.Database, config *Config, cache cache) *Database {
+	cfg := *config // copy config to avoid changing the original one
+	cfg.Cache = 0  // disable cache initialization in prepare
+	db := NewDatabaseWithConfig(diskdb, &cfg)
+	db.cleans = cache
+	return db
+}
+
 // Reader returns a reader for accessing all trie nodes with provided state root.
 // Nil is returned in case the state is not available.
 func (db *Database) Reader(blockRoot common.Hash) Reader {
@@ -127,6 +143,13 @@ func (db *Database) Update(root common.Hash, parent common.Hash, nodes *trienode
 		db.preimages.commit(false)
 	}
 	return db.backend.Update(root, parent, nodes)
+}
+
+func (db *Database) UpdateAndReferenceRoot(root common.Hash, parent common.Hash, nodes *trienode.MergedNodeSet) error {
+	if db.preimages != nil {
+		db.preimages.commit(false)
+	}
+	return db.backend.UpdateAndReferenceRoot(root, parent, nodes)
 }
 
 // Commit iterates over all the children of a particular node, writes them out
