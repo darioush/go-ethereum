@@ -38,7 +38,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 )
 
@@ -673,12 +672,12 @@ func (db *Database) update(root common.Hash, parent common.Hash, nodes *trienode
 	// to an account trie leaf.
 	if set, present := nodes.Sets[common.Hash{}]; present {
 		for _, n := range set.Leaves {
-			var account types.StateAccount
-			if err := rlp.DecodeBytes(n.Blob, &account); err != nil {
+			accountRoot, err := GetAccountRoot(n.Blob)
+			if err != nil {
 				return err
 			}
-			if account.Root != types.EmptyRootHash {
-				db.reference(account.Root, n.Parent)
+			if accountRoot != types.EmptyRootHash {
+				db.reference(accountRoot, n.Parent)
 			}
 		}
 	}
