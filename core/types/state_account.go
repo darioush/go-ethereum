@@ -22,13 +22,14 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-//go:generate go run ../../rlp/rlpgen -type StateAccount -out gen_account_rlp.go
+//go:generate go run github.com/ethereum/go-ethereum/rlp/rlpgen -type StateAccount -out gen_account_rlp.go
 
 // StateAccount is the Ethereum consensus representation of accounts.
 // These objects are stored in the main account trie.
 type StateAccount struct {
-	Nonce    uint64
-	Balance  *big.Int
-	Root     common.Hash // merkle root of the storage trie
-	CodeHash []byte
+	Nonce       uint64
+	Balance     *big.Int
+	Root        common.Hash // merkle root of the storage trie
+	CodeHash    []byte
+	IsMultiCoin bool
 }
