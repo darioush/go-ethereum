@@ -234,20 +234,3 @@ func (evm *EVM) NativeAssetCall(caller common.Address, input []byte, suppliedGas
 	}
 	return ret, remainingGas, err
 }
-
-var (
-	OpBalanceMultiCoin = &operation{
-		execute:     opBalanceMultiCoin,
-		constantGas: params.BalanceGasFrontier,
-		minStack:    minStack(2, 1),
-		maxStack:    maxStack(2, 1),
-	}
-	OpCallExpert = &operation{
-		execute:     opCallExpert,
-		constantGas: params.CallGasFrontier,
-		dynamicGas:  gasCall,
-		minStack:    minStack(9, 1),
-		maxStack:    maxStack(9, 1),
-		memorySize:  memoryCallExpert,
-	}
-)
