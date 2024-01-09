@@ -172,6 +172,8 @@ type StdTraceConfig struct {
 	logger.Config
 	Reexec *uint64
 	TxHash common.Hash
+	// Chain overrides, can be used to execute a trace using future fork rules
+	Overrides *params.ChainConfig `json:"overrides,omitempty"`
 }
 
 // txTraceResult is the result of a single transaction trace.
