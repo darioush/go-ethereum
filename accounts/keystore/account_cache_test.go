@@ -133,8 +133,12 @@ func TestWatchNoDir(t *testing.T) {
 	}
 
 	// ks should see the account.
-	wantAccounts := []accounts.Account{cachetestAccounts[0]}
-	wantAccounts[0].URL = accounts.URL{Scheme: KeyStoreScheme, Path: file}
+	wantAccounts := []accounts.Account{
+		{
+			Address: cachetestAccounts[0].Address,
+			URL:     accounts.URL{Scheme: KeyStoreScheme, Path: file},
+		},
+	}
 	for d := 200 * time.Millisecond; d < 8*time.Second; d *= 2 {
 		list = ks.Accounts()
 		if reflect.DeepEqual(list, wantAccounts) {
@@ -346,8 +350,12 @@ func TestUpdatedKeyfileContents(t *testing.T) {
 	}
 
 	// ks should see the account.
-	wantAccounts := []accounts.Account{cachetestAccounts[0]}
-	wantAccounts[0].URL = accounts.URL{Scheme: KeyStoreScheme, Path: file}
+	wantAccounts := []accounts.Account{
+		{
+			Address: cachetestAccounts[0].Address,
+			URL:     accounts.URL{Scheme: KeyStoreScheme, Path: file},
+		},
+	}
 	if err := waitForAccounts(wantAccounts, ks); err != nil {
 		t.Error(err)
 		return
@@ -360,8 +368,12 @@ func TestUpdatedKeyfileContents(t *testing.T) {
 		t.Fatal(err)
 		return
 	}
-	wantAccounts = []accounts.Account{cachetestAccounts[1]}
-	wantAccounts[0].URL = accounts.URL{Scheme: KeyStoreScheme, Path: file}
+	wantAccounts = []accounts.Account{
+		{
+			Address: cachetestAccounts[1].Address,
+			URL:     accounts.URL{Scheme: KeyStoreScheme, Path: file},
+		},
+	}
 	if err := waitForAccounts(wantAccounts, ks); err != nil {
 		t.Errorf("First replacement failed")
 		t.Error(err)
@@ -376,8 +388,12 @@ func TestUpdatedKeyfileContents(t *testing.T) {
 		t.Fatal(err)
 		return
 	}
-	wantAccounts = []accounts.Account{cachetestAccounts[2]}
-	wantAccounts[0].URL = accounts.URL{Scheme: KeyStoreScheme, Path: file}
+	wantAccounts = []accounts.Account{
+		{
+			Address: cachetestAccounts[2].Address,
+			URL:     accounts.URL{Scheme: KeyStoreScheme, Path: file},
+		},
+	}
 	if err := waitForAccounts(wantAccounts, ks); err != nil {
 		t.Errorf("Second replacement failed")
 		t.Error(err)
