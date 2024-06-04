@@ -140,9 +140,10 @@ type EVM struct {
 }
 
 type ChainConfig interface {
-	Rules(blockNum *big.Int, isMerge bool, timestamp uint64) params.Rules
+	Rules(blockNum *big.Int, isMerge bool, time uint64) params.Rules
 	IsLondon(blockNum *big.Int) bool
 	IsEIP158(blockNum *big.Int) bool
+	IsCancun(blockNum *big.Int, time uint64) bool
 }
 
 // NewEVM returns a new EVM. The returned EVM is not thread safe and should
