@@ -273,11 +273,13 @@ func (s *StateDB) AddRefund(gas uint64) {
 }
 
 // SubRefund removes gas from the refund counter.
-// This method will panic if the refund counter goes below zero
+// This method will set the refund counter to 0 if the gas is greater than the current refund.
 func (s *StateDB) SubRefund(gas uint64) {
 	s.journal.append(refundChange{prev: s.refund})
 	if gas > s.refund {
-		panic(fmt.Sprintf("Refund counter below zero (gas: %d > refund: %d)", gas, s.refund))
+		log.Warn("Setting refund to 0", "currentRefund", s.refund, "gas", gas)
+		s.refund = 0
+		return
 	}
 	s.refund -= gas
 }
@@ -301,7 +303,7 @@ func (s *StateDB) GetBalance(addr common.Address) *big.Int {
 	if stateObject != nil {
 		return stateObject.Balance()
 	}
-	return common.Big0
+	return new(big.Int).Set(common.Big0)
 }
 
 // GetNonce retrieves the nonce from the given address or 0 if object not found
