@@ -108,9 +108,6 @@ type StateDB struct {
 	// Per-transaction access list
 	accessList *accessList
 
-	// Original access list
-	_accessList types.AccessList
-
 	// Transient storage
 	transientStorage transientStorage
 
