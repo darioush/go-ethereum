@@ -2,17 +2,7 @@ package state
 
 import (
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 )
-
-func (s *StateDB) AccessList() types.AccessList {
-	return s._accessList
-}
-
-// Warning: Test Only
-func (s *StateDB) SetAccessList(list types.AccessList) {
-	s._accessList = list
-}
 
 // GetTxHash returns the current tx hash on the StateDB set by SetTxContext.
 func (s *StateDB) GetTxHash() common.Hash {

@@ -792,7 +792,6 @@ func (s *StateDB) Copy() *StateDB {
 	// empty lists, so we do it anyway to not blow up if we ever decide copy them
 	// in the middle of a transaction.
 	state.accessList = s.accessList.Copy()
-	state._accessList = s._accessList // TODO: does need deep copy?
 	state.transientStorage = s.transientStorage.Copy()
 
 	// If there's a prefetcher running, make an inactive copy of it that can
@@ -1331,8 +1330,6 @@ func (s *StateDB) commit(block uint64, deleteEmptyObjects bool, blockHash, paren
 // - Add coinbase to access list (EIP-3651)
 // - Reset transient storage (EIP-1153)
 func (s *StateDB) Prepare(rules params.Rules, sender, coinbase common.Address, dst *common.Address, precompiles []common.Address, list types.AccessList) {
-	s._accessList = list
-
 	if rules.IsBerlin {
 		// Clear out any leftover from previous executions
 		al := newAccessList()
