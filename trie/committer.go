@@ -156,6 +156,7 @@ func (c *committer) store(path []byte, n node) node {
 
 // mptResolver the children resolver in merkle-patricia-tree.
 type mptResolver struct{}
+type MptResolver = mptResolver
 
 // ForEach implements childResolver, decodes the provided node and
 // traverses the children inside.
