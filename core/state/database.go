@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
+	"github.com/ethereum/go-ethereum/trie/triestate"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-ethereum/triedb"
 )
@@ -42,6 +43,38 @@ const (
 	// Number of address->curve point associations to keep.
 	pointCacheSize = 4096
 )
+
+// TrieDB is a database interface for trie nodes.
+type TrieDB interface {
+	// IsVerkle returns the indicator if the database is holding a verkle tree.
+	IsVerkle() bool
+
+	// Size returns the current storage size of the diff layers on top of the
+	// disk layer and the storage size of the nodes cached in the disk layer.
+	//
+	// For hash scheme, there is no differentiation between diff layer nodes
+	// and dirty disk layer nodes, so both are merged into the second return.
+	Size() (common.StorageSize, common.StorageSize, common.StorageSize)
+
+	// Update performs a state transition by committing dirty nodes contained
+	// in the given set in order to update state from the specified parent to
+	// the specified root.
+	//
+	// The passed in maps(nodes, states) will be retained to avoid copying
+	// everything. Therefore, these maps must not be changed afterwards.
+	Update(common.Hash, common.Hash, uint64, *trienode.MergedNodeSet, *triestate.Set) error
+
+	// Reference adds a new reference from a parent node to a child node. This function
+	// is used to add reference between internal trie node and external node(e.g. storage
+	// trie root), all internal trie nodes are referenced together by database itself.
+	//
+	// It's only supported by hash-based database and will return an error for others.
+	Reference(common.Hash, common.Hash) error
+
+	// Dereference removes an existing reference from a root node. It's only
+	// supported by hash-based database and will return an error for others.
+	Dereference(common.Hash) error
+}
 
 // Database wraps access to tries and contract code.
 type Database interface {
@@ -67,7 +100,7 @@ type Database interface {
 	PointCache() *utils.PointCache
 
 	// TrieDB returns the underlying trie database for managing trie nodes.
-	TrieDB() *triedb.Database
+	TrieDB() TrieDB
 }
 
 // Trie is a Ethereum Merkle Patricia trie.
@@ -268,7 +301,7 @@ func (db *cachingDB) DiskDB() ethdb.KeyValueStore {
 }
 
 // TrieDB retrieves any intermediate trie-node caching layer.
-func (db *cachingDB) TrieDB() *triedb.Database {
+func (db *cachingDB) TrieDB() TrieDB {
 	return db.triedb
 }
 

@@ -38,11 +38,12 @@ import (
 // for releasing state.
 var noopReleaser = tracers.StateReleaseFunc(func() {})
 
+// hashState retrieves the state database associated with a certain block.
 func (eth *Ethereum) hashState(ctx context.Context, block *types.Block, reexec uint64, base *state.StateDB, readOnly bool, preferDisk bool) (statedb *state.StateDB, release tracers.StateReleaseFunc, err error) {
 	var (
 		current  *types.Block
 		database state.Database
-		tdb      *triedb.Database
+		tdb      state.TrieDB
 		report   = true
 		origin   = block.NumberU64()
 	)
@@ -85,8 +86,9 @@ func (eth *Ethereum) hashState(ctx context.Context, block *types.Block, reexec u
 		// the internal junks created by tracing will be persisted into the disk.
 		// TODO(rjl493456442), clean cache is disabled to prevent memory leak,
 		// please re-enable it for better performance.
-		tdb = triedb.NewDatabase(eth.chainDb, triedb.HashDefaults)
-		database = state.NewDatabaseWithNodeDB(eth.chainDb, tdb)
+		newTrieDB := triedb.NewDatabase(eth.chainDb, triedb.HashDefaults)
+		database = state.NewDatabaseWithNodeDB(eth.chainDb, newTrieDB)
+		tdb = newTrieDB
 
 		// If we didn't check the live database, do check state over ephemeral database,
 		// otherwise we would rewind past a persisted block (specific corner case is
