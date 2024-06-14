@@ -24,8 +24,6 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
-//go:generate go run ../../rlp/rlpgen -type StateAccount -out gen_account_rlp.go
-
 // StateAccount is the Ethereum consensus representation of accounts.
 // These objects are stored in the main account trie.
 type StateAccount struct {
@@ -33,6 +31,8 @@ type StateAccount struct {
 	Balance  *big.Int
 	Root     common.Hash // merkle root of the storage trie
 	CodeHash []byte
+
+	IsMultiCoin bool `rlp:"-"` // Coreth extension: Not encoded by default
 }
 
 // NewEmptyStateAccount constructs an empty state account.
@@ -51,10 +51,11 @@ func (acct *StateAccount) Copy() *StateAccount {
 		balance = new(big.Int).Set(acct.Balance)
 	}
 	return &StateAccount{
-		Nonce:    acct.Nonce,
-		Balance:  balance,
-		Root:     acct.Root,
-		CodeHash: common.CopyBytes(acct.CodeHash),
+		Nonce:       acct.Nonce,
+		Balance:     balance,
+		Root:        acct.Root,
+		CodeHash:    common.CopyBytes(acct.CodeHash),
+		IsMultiCoin: acct.IsMultiCoin,
 	}
 }
 
@@ -66,13 +67,16 @@ type SlimAccount struct {
 	Balance  *big.Int
 	Root     []byte // Nil if root equals to types.EmptyRootHash
 	CodeHash []byte // Nil if hash equals to types.EmptyCodeHash
+
+	IsMultiCoin bool `rlp:"-"` // Coreth extension: Not encoded by default
 }
 
 // SlimAccountRLP encodes the state account in 'slim RLP' format.
 func SlimAccountRLP(account StateAccount) []byte {
 	slim := SlimAccount{
-		Nonce:   account.Nonce,
-		Balance: account.Balance,
+		Nonce:       account.Nonce,
+		Balance:     account.Balance,
+		IsMultiCoin: account.IsMultiCoin,
 	}
 	if account.Root != EmptyRootHash {
 		slim.Root = account.Root[:]
