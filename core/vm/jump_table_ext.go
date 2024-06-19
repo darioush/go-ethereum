@@ -16,7 +16,40 @@ var (
 	ApricotPhase2InstructionSet = newApricotPhase2InstructionSet()
 	ApricotPhase3InstructionSet = newApricotPhase3InstructionSet()
 	DurangoInstructionSet       = newDurangoInstructionSet()
+
+	SubnetEVMInstructionSet        = newSubnetEVMInstructionSet()
+	SubnetEVMDurangoInstructionSet = newSubnetEVMDurangoInstructionSet()
+	SubnetEVMCancunInstructionSet  = newSubnetEVMCancunInstructionSet()
 )
+
+func newSubnetEVMCancunInstructionSet() JumpTable {
+	instructionSet := newSubnetEVMDurangoInstructionSet()
+	enable4844(&instructionSet) // EIP-4844 (BLOBHASH opcode)
+	enable7516(&instructionSet) // EIP-7516 (BLOBBASEFEE opcode)
+	enable1153(&instructionSet) // EIP-1153 "Transient Storage"
+	enable5656(&instructionSet) // EIP-5656 (MCOPY opcode)
+	enable6780(&instructionSet) // EIP-6780 SELFDESTRUCT only in same transaction
+	return validate(instructionSet)
+}
+
+// newDurangoInstructionSet returns the frontier, homestead, byzantium,
+// constantinople, istanbul, petersburg, subnet-evm, durango instructions.
+func newSubnetEVMDurangoInstructionSet() JumpTable {
+	instructionSet := newSubnetEVMInstructionSet()
+	enable3855(&instructionSet) // PUSH0 instruction
+	enable3860(&instructionSet) // Limit and meter initcode
+
+	return validate(instructionSet)
+}
+
+// newSubnetEVMInstructionSet returns the frontier, homestead, byzantium,
+// constantinople, istanbul, petersburg, subnet-evm instructions.
+func newSubnetEVMInstructionSet() JumpTable {
+	instructionSet := newIstanbulInstructionSet()
+	enable2929(&instructionSet)
+	enable3198(&instructionSet) // Base fee opcode https://eips.ethereum.org/EIPS/eip-3198
+	return validate(instructionSet)
+}
 
 func newDurangoInstructionSet() JumpTable {
 	instructionSet := newApricotPhase3InstructionSet()

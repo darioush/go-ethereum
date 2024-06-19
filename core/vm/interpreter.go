@@ -36,6 +36,7 @@ type Config struct {
 	JumpTable         *JumpTable
 	IsProhibited      func(addr common.Address) error
 	InterpreterHook   func(contract *Contract) *Contract
+	CanDeploy         func(addr common.Address) error
 }
 
 // ScopeContext contains the things that are per-call, such as stack and memory,
