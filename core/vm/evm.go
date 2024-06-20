@@ -473,6 +473,13 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	if evm.StateDB.GetNonce(address) != 0 || (contractHash != (common.Hash{}) && contractHash != types.EmptyCodeHash) {
 		return nil, common.Address{}, 0, ErrContractAddressCollision
 	}
+	// Subnet-EVM extension to control contract creation
+	if evm.Config.CanDeploy != nil {
+		origin := evm.TxContext.Origin
+		if err := evm.Config.CanDeploy(origin); err != nil {
+			return nil, common.Address{}, 0, err
+		}
+	}
 	// Create a new account on the state
 	snapshot := evm.StateDB.Snapshot()
 	evm.StateDB.CreateAccount(address)
