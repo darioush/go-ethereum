@@ -99,6 +99,15 @@ func (db *Database) Update(root common.Hash, parent common.Hash, block uint64, n
 	if db.preimages != nil {
 		db.preimages.commit(false)
 	}
+	if root == parent {
+		type withUpdateSameRoot interface {
+			UpdateSameRoot(common.Hash) error
+		}
+		if u, ok := db.backend.(withUpdateSameRoot); ok {
+			return u.UpdateSameRoot(root)
+		}
+		return nil
+	}
 	return db.backend.Update(root, parent, block, nodes, states)
 }
 

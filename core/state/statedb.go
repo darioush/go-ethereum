@@ -1289,7 +1289,7 @@ func (s *StateDB) commit(block uint64, deleteEmptyObjects bool, blockHash, paren
 	if origin == (common.Hash{}) {
 		origin = types.EmptyRootHash
 	}
-	if root != origin {
+	{
 		start := time.Now()
 		set := triestate.New(s.accountsOrigin, s.storagesOrigin, incomplete)
 		if err := s.db.TrieDB().Update(root, origin, block, nodes, set); err != nil {
