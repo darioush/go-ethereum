@@ -112,6 +112,12 @@ type Snapshot interface {
 	// Storage directly retrieves the storage data associated with a particular hash,
 	// within a particular account.
 	Storage(accountHash, storageHash common.Hash) ([]byte, error)
+
+	// AccountIterator creates an account iterator over an arbitrary layer.
+	AccountIterator(seek common.Hash) AccountIterator
+
+	// StorageIterator creates a storage iterator over an arbitrary layer.
+	StorageIterator(account common.Hash, seek common.Hash) (StorageIterator, bool)
 }
 
 // snapshot is the internal version of the snapshot data layer that supports some
@@ -140,12 +146,6 @@ type snapshot interface {
 	// Stale return whether this layer has become stale (was flattened across) or
 	// if it's still live.
 	Stale() bool
-
-	// AccountIterator creates an account iterator over an arbitrary layer.
-	AccountIterator(seek common.Hash) AccountIterator
-
-	// StorageIterator creates a storage iterator over an arbitrary layer.
-	StorageIterator(account common.Hash, seek common.Hash) (StorageIterator, bool)
 }
 
 // Config includes the configurations for snapshots.
@@ -336,6 +336,32 @@ func (t *Tree) Snapshots(root common.Hash, limits int, nodisk bool) []Snapshot {
 		layer = parent
 	}
 	return ret
+}
+
+func (t *Tree) UpdateWithBlockHash(
+	root common.Hash,
+	parent common.Hash,
+	blockHash common.Hash,
+	parentHash common.Hash,
+	destructs map[common.Hash]struct{},
+	accounts map[common.Hash][]byte,
+	storage map[common.Hash]map[common.Hash][]byte,
+) error {
+	// Only update if there's a state transition (skip empty Clique blocks)
+	if parent != root {
+		if err := t.Update(root, parent, destructs, accounts, storage); err != nil {
+			log.Warn("Failed to update snapshot tree", "from", parent, "to", root, "err", err)
+		}
+
+		// Keep 128 diff layers in the memory, persistent layer is 129th.
+		// - head layer is paired with HEAD state
+		// - head-1 layer is paired with HEAD-1 state
+		// - head-127 layer(bottom-most diff layer) is paired with HEAD-127 state
+		if err := t.Cap(root, 128); err != nil {
+			log.Warn("Failed to cap snapshot tree", "root", root, "layers", 128, "err", err)
+		}
+	}
+	return nil
 }
 
 // Update adds a new snapshot into the tree, if that can be linked to an existing

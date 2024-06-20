@@ -63,7 +63,7 @@ type StateDB struct {
 	prefetcher *triePrefetcher
 	trie       Trie
 	hasher     crypto.KeccakState
-	snaps      *snapshot.Tree    // Nil if snapshot is not available
+	snaps      SnapshotTree      // Nil if snapshot is not available
 	snap       snapshot.Snapshot // Nil if snapshot is not available
 
 	// originalRoot is the pre-state root, before any changes were made.
@@ -141,7 +141,17 @@ type StateDB struct {
 }
 
 // New creates a new state from a given trie.
-func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) {
+func New(root common.Hash, db Database, snaps SnapshotTree) (*StateDB, error) {
+	if snaps == nil || checkNilInterface(snaps) {
+		return NewWithSnapshot(root, db, nil, nil)
+	}
+	return NewWithSnapshot(root, db, snaps, snaps.Snapshot(root))
+}
+
+// NewWithSnapshot creates a new state from a given trie with the specified [snap]
+// If [snap] doesn't have the same root as [root], then NewWithSnapshot will return
+// an error.
+func NewWithSnapshot(root common.Hash, db Database, snaps SnapshotTree, snap snapshot.Snapshot) (*StateDB, error) {
 	tr, err := db.OpenTrie(root)
 	if err != nil {
 		return nil, err
@@ -166,8 +176,11 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 		transientStorage:     newTransientStorage(),
 		hasher:               crypto.NewKeccakState(),
 	}
-	if sdb.snaps != nil {
-		sdb.snap = sdb.snaps.Snapshot(root)
+	if snap != nil {
+		if snap.Root() != root {
+			return nil, fmt.Errorf("cannot create new statedb for root: %s, using snapshot with mismatched root: %s", root, snap.Root().Hex())
+		}
+		sdb.snap = snap
 	}
 	return sdb, nil
 }
@@ -257,11 +270,13 @@ func (s *StateDB) AddRefund(gas uint64) {
 }
 
 // SubRefund removes gas from the refund counter.
-// This method will panic if the refund counter goes below zero
+// This method will set the refund counter to 0 if the gas is greater than the current refund.
 func (s *StateDB) SubRefund(gas uint64) {
 	s.journal.append(refundChange{prev: s.refund})
 	if gas > s.refund {
-		panic(fmt.Sprintf("Refund counter below zero (gas: %d > refund: %d)", gas, s.refund))
+		log.Warn("Setting refund to 0", "currentRefund", s.refund, "gas", gas)
+		s.refund = 0
+		return
 	}
 	s.refund -= gas
 }
@@ -285,7 +300,7 @@ func (s *StateDB) GetBalance(addr common.Address) *big.Int {
 	if stateObject != nil {
 		return stateObject.Balance()
 	}
-	return common.Big0
+	return new(big.Int).Set(common.Big0)
 }
 
 // GetNonce retrieves the nonce from the given address or 0 if object not found
@@ -566,19 +581,18 @@ func (s *StateDB) getDeletedStateObject(addr common.Address) *stateObject {
 	var data *types.StateAccount
 	if s.snap != nil {
 		start := time.Now()
-		acc, err := s.snap.Account(crypto.HashData(s.hasher, addr.Bytes()))
+		acc, err := s.snap.AccountRLP(crypto.HashData(s.hasher, addr.Bytes()))
 		if metrics.EnabledExpensive {
 			s.SnapshotAccountReads += time.Since(start)
 		}
 		if err == nil {
-			if acc == nil {
+			if len(acc) == 0 {
 				return nil
 			}
-			data = &types.StateAccount{
-				Nonce:    acc.Nonce,
-				Balance:  acc.Balance,
-				CodeHash: acc.CodeHash,
-				Root:     common.BytesToHash(acc.Root),
+			data, err = types.FullAccount(acc)
+			if err != nil {
+				s.setError(fmt.Errorf("could not unmarshal account (%x) error: %w", addr.Bytes(), err))
+				return nil
 			}
 			if len(data.CodeHash) == 0 {
 				data.CodeHash = types.EmptyCodeHash.Bytes()
@@ -950,10 +964,7 @@ func (s *StateDB) clearJournalAndRefund() {
 // storage iteration and constructs trie node deletion markers by creating
 // stack trie with iterated slots.
 func (s *StateDB) fastDeleteStorage(addrHash common.Hash, root common.Hash) (bool, common.StorageSize, map[common.Hash][]byte, *trienode.NodeSet, error) {
-	iter, err := s.snaps.StorageIterator(s.originalRoot, addrHash, common.Hash{})
-	if err != nil {
-		return false, 0, nil, nil, err
-	}
+	iter, _ := s.snap.StorageIterator(addrHash, common.Hash{})
 	defer iter.Release()
 
 	var (
@@ -1154,6 +1165,15 @@ func (s *StateDB) handleDestruction(nodes *trienode.MergedNodeSet) (map[common.A
 }
 
 // Commit writes the state to the underlying in-memory trie database.
+func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, error) {
+	return s.commit(block, deleteEmptyObjects, common.Hash{}, common.Hash{})
+}
+
+// CommitWithBlockHash writes the state to the underlying in-memory trie database.
+func (s *StateDB) CommitWithBlockHash(block uint64, deleteEmptyObjects bool, blockHash, parentHash common.Hash) (common.Hash, error) {
+	return s.commit(block, deleteEmptyObjects, blockHash, parentHash)
+}
+
 // Once the state is committed, tries cached in stateDB (including account
 // trie, storage tries) will no longer be functional. A new state instance
 // must be created with new root and updated database for accessing post-
@@ -1161,7 +1181,7 @@ func (s *StateDB) handleDestruction(nodes *trienode.MergedNodeSet) (map[common.A
 //
 // The associated block number of the state transition is also provided
 // for more chain context.
-func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, error) {
+func (s *StateDB) commit(block uint64, deleteEmptyObjects bool, blockHash, parentHash common.Hash) (common.Hash, error) {
 	// Short circuit in case any database failure occurred earlier.
 	if s.dbErr != nil {
 		return common.Hash{}, fmt.Errorf("commit aborted due to earlier error: %v", s.dbErr)
@@ -1249,18 +1269,13 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 	// If snapshotting is enabled, update the snapshot tree with this new version
 	if s.snap != nil {
 		start := time.Now()
-		// Only update if there's a state transition (skip empty Clique blocks)
-		if parent := s.snap.Root(); parent != root {
-			if err := s.snaps.Update(root, parent, s.convertAccountSet(s.stateObjectsDestruct), s.accounts, s.storages); err != nil {
-				log.Warn("Failed to update snapshot tree", "from", parent, "to", root, "err", err)
-			}
-			// Keep 128 diff layers in the memory, persistent layer is 129th.
-			// - head layer is paired with HEAD state
-			// - head-1 layer is paired with HEAD-1 state
-			// - head-127 layer(bottom-most diff layer) is paired with HEAD-127 state
-			if err := s.snaps.Cap(root, 128); err != nil {
-				log.Warn("Failed to cap snapshot tree", "root", root, "layers", 128, "err", err)
-			}
+		if err := s.snaps.UpdateWithBlockHash(
+			root, s.snap.Root(),
+			blockHash, parentHash,
+			s.convertAccountSet(s.stateObjectsDestruct),
+			s.accounts, s.storages,
+		); err != nil {
+			log.Warn("Failed to update snapshot tree", "from", s.snap.Root(), "to", root, "err", err)
 		}
 		if metrics.EnabledExpensive {
 			s.SnapshotCommits += time.Since(start)
@@ -1274,7 +1289,7 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 	if origin == (common.Hash{}) {
 		origin = types.EmptyRootHash
 	}
-	if root != origin {
+	{
 		start := time.Now()
 		set := triestate.New(s.accountsOrigin, s.storagesOrigin, incomplete)
 		if err := s.db.TrieDB().Update(root, origin, block, nodes, set); err != nil {

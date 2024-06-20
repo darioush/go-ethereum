@@ -31,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/trie/triedb/database"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/trie/triestate"
 )
@@ -59,12 +60,6 @@ var (
 	memcacheCommitBytesMeter = metrics.NewRegisteredMeter("hashdb/memcache/commit/bytes", nil)
 )
 
-// ChildResolver defines the required method to decode the provided
-// trie node and iterate the children on top.
-type ChildResolver interface {
-	ForEach(node []byte, onChild func(common.Hash))
-}
-
 // Config contains the settings for database.
 type Config struct {
 	CleanCacheSize int // Maximum memory allowance (in bytes) for caching clean nodes
@@ -79,12 +74,16 @@ var Defaults = &Config{
 	CleanCacheSize: 0,
 }
 
+func (c *Config) New(diskdb ethdb.Database, resolver database.ChildResolver) database.HashBackend {
+	return New(diskdb, c, resolver)
+}
+
 // Database is an intermediate write layer between the trie data structures and
 // the disk database. The aim is to accumulate trie writes in-memory and only
 // periodically flush a couple tries to disk, garbage collecting the remainder.
 type Database struct {
-	diskdb   ethdb.Database // Persistent storage for matured trie nodes
-	resolver ChildResolver  // The handler to resolve children of nodes
+	diskdb   ethdb.Database         // Persistent storage for matured trie nodes
+	resolver database.ChildResolver // The handler to resolve children of nodes
 
 	cleans  *fastcache.Cache            // GC friendly memory cache of clean node RLPs
 	dirties map[common.Hash]*cachedNode // Data and references relationships of dirty trie nodes
@@ -123,7 +122,7 @@ var cachedNodeSize = int(reflect.TypeOf(cachedNode{}).Size())
 // forChildren invokes the callback for all the tracked children of this node,
 // both the implicit ones from inside the node as well as the explicit ones
 // from outside the node.
-func (n *cachedNode) forChildren(resolver ChildResolver, onChild func(hash common.Hash)) {
+func (n *cachedNode) forChildren(resolver database.ChildResolver, onChild func(hash common.Hash)) {
 	for child := range n.external {
 		onChild(child)
 	}
@@ -131,7 +130,7 @@ func (n *cachedNode) forChildren(resolver ChildResolver, onChild func(hash commo
 }
 
 // New initializes the hash-based node database.
-func New(diskdb ethdb.Database, config *Config, resolver ChildResolver) *Database {
+func New(diskdb ethdb.Database, config *Config, resolver database.ChildResolver) *Database {
 	if config == nil {
 		config = Defaults
 	}
@@ -631,7 +630,7 @@ func (db *Database) Scheme() string {
 
 // Reader retrieves a node reader belonging to the given state root.
 // An error will be returned if the requested state is not available.
-func (db *Database) Reader(root common.Hash) (*reader, error) {
+func (db *Database) Reader(root common.Hash) (database.Reader, error) {
 	if _, err := db.node(root); err != nil {
 		return nil, fmt.Errorf("state %#x is not available, %v", root, err)
 	}

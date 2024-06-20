@@ -37,7 +37,13 @@ type (
 	GetHashFunc func(uint64) common.Hash
 )
 
-func (evm *EVM) precompile(addr common.Address) (PrecompiledContract, bool) {
+type (
+	// RunFunc is the signature of a precompiled contract run function
+	// Consider passing caller as ContractRef instead of common.Address
+	RunFunc func(caller common.Address, input []byte, suppliedGas uint64, readOnly bool) (ret []byte, remainingGas uint64, err error)
+)
+
+func (evm *EVM) precompile(addr common.Address) (RunFunc, bool) {
 	var precompiles map[common.Address]PrecompiledContract
 	switch {
 	case evm.chainRules.IsCancun:
@@ -52,7 +58,15 @@ func (evm *EVM) precompile(addr common.Address) (PrecompiledContract, bool) {
 		precompiles = PrecompiledContractsHomestead
 	}
 	p, ok := precompiles[addr]
-	return p, ok
+	if ok {
+		runFn := func(caller common.Address, input []byte, suppliedGas uint64, readOnly bool) ([]byte, uint64, error) {
+			return RunPrecompiledContract(p, input, suppliedGas)
+		}
+		return runFn, ok
+	}
+
+	runFn, ok := evm.Config.CustomPrecompiles[addr]
+	return runFn, ok
 }
 
 // BlockContext provides the EVM with auxiliary information. Once provided
@@ -75,6 +89,8 @@ type BlockContext struct {
 	BaseFee     *big.Int       // Provides information for BASEFEE (0 if vm runs with NoBaseFee flag and 0 gas price)
 	BlobBaseFee *big.Int       // Provides information for BLOBBASEFEE (0 if vm runs with NoBaseFee flag and 0 blob gas price)
 	Random      *common.Hash   // Provides information for PREVRANDAO
+
+	Extra interface{}
 }
 
 // TxContext provides the EVM with information about a transaction.
@@ -106,7 +122,7 @@ type EVM struct {
 	depth int
 
 	// chainConfig contains information about the current chain
-	chainConfig *params.ChainConfig
+	chainConfig ChainConfig
 	// chain rules contains the chain rules for the current epoch
 	chainRules params.Rules
 	// virtual machine configuration options used to initialise the
@@ -123,9 +139,16 @@ type EVM struct {
 	callGasTemp uint64
 }
 
+type ChainConfig interface {
+	Rules(blockNum *big.Int, isMerge bool, time uint64) params.Rules
+	IsLondon(blockNum *big.Int) bool
+	IsEIP158(blockNum *big.Int) bool
+	IsCancun(blockNum *big.Int, time uint64) bool
+}
+
 // NewEVM returns a new EVM. The returned EVM is not thread safe and should
 // only ever be used *once*.
-func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig *params.ChainConfig, config Config) *EVM {
+func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig ChainConfig, config Config) *EVM {
 	// If basefee tracking is disabled (eth_call, eth_estimateGas, etc), and no
 	// gas prices were specified, lower the basefee to 0 to avoid breaking EVM
 	// invariants (basefee < feecap)
@@ -224,7 +247,7 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	}
 
 	if isPrecompile {
-		ret, gas, err = RunPrecompiledContract(p, input, gas)
+		ret, gas, err = p(caller.Address(), input, gas, evm.interpreter.readOnly)
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		// The contract is a scoped environment for this execution context only.
@@ -287,7 +310,7 @@ func (evm *EVM) CallCode(caller ContractRef, addr common.Address, input []byte, 
 
 	// It is allowed to call precompiles, even via delegatecall
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		ret, gas, err = RunPrecompiledContract(p, input, gas)
+		ret, gas, err = p(caller.Address(), input, gas, evm.interpreter.readOnly)
 	} else {
 		addrCopy := addr
 		// Initialise a new contract and set the code that is to be used by the EVM.
@@ -332,7 +355,7 @@ func (evm *EVM) DelegateCall(caller ContractRef, addr common.Address, input []by
 
 	// It is allowed to call precompiles, even via delegatecall
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		ret, gas, err = RunPrecompiledContract(p, input, gas)
+		ret, gas, err = p(caller.Address(), input, gas, evm.interpreter.readOnly)
 	} else {
 		addrCopy := addr
 		// Initialise a new contract and make initialise the delegate values
@@ -381,7 +404,7 @@ func (evm *EVM) StaticCall(caller ContractRef, addr common.Address, input []byte
 	}
 
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		ret, gas, err = RunPrecompiledContract(p, input, gas)
+		ret, gas, err = p(caller.Address(), input, gas, evm.interpreter.readOnly)
 	} else {
 		// At this point, we use a copy of address. If we don't, the go compiler will
 		// leak the 'contract' to the outer scope, and make allocation for 'contract'
@@ -428,6 +451,13 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	if !evm.Context.CanTransfer(evm.StateDB, caller.Address(), value) {
 		return nil, common.Address{}, gas, ErrInsufficientBalance
 	}
+	// If there is any collision with a prohibited address, return an error instead
+	// of allowing the contract to be created.
+	if isProhibited := evm.Config.IsProhibited; isProhibited != nil {
+		if err := isProhibited(address); err != nil {
+			return nil, common.Address{}, gas, err
+		}
+	}
 	nonce := evm.StateDB.GetNonce(caller.Address())
 	if nonce+1 < nonce {
 		return nil, common.Address{}, gas, ErrNonceUintOverflow
@@ -442,6 +472,13 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	contractHash := evm.StateDB.GetCodeHash(address)
 	if evm.StateDB.GetNonce(address) != 0 || (contractHash != (common.Hash{}) && contractHash != types.EmptyCodeHash) {
 		return nil, common.Address{}, 0, ErrContractAddressCollision
+	}
+	// Subnet-EVM extension to control contract creation
+	if evm.Config.CanDeploy != nil {
+		origin := evm.TxContext.Origin
+		if err := evm.Config.CanDeploy(origin); err != nil {
+			return nil, common.Address{}, 0, err
+		}
 	}
 	// Create a new account on the state
 	snapshot := evm.StateDB.Snapshot()
@@ -526,4 +563,4 @@ func (evm *EVM) Create2(caller ContractRef, code []byte, gas uint64, endowment *
 }
 
 // ChainConfig returns the environment's chain configuration
-func (evm *EVM) ChainConfig() *params.ChainConfig { return evm.chainConfig }
+func (evm *EVM) ChainConfig() ChainConfig { return evm.chainConfig }

@@ -182,6 +182,11 @@ func ApplyMessage(evm *vm.EVM, msg *Message, gp *GasPool) (*ExecutionResult, err
 	return NewStateTransition(evm, msg, gp).TransitionDb()
 }
 
+type stateDB interface {
+	vm.StateDB
+	Prepare(rules params.Rules, sender, coinbase common.Address, dest *common.Address, precompiles []common.Address, txAccesses types.AccessList)
+}
+
 // StateTransition represents a state transition.
 //
 // == The State Transitioning Model
@@ -209,7 +214,7 @@ type StateTransition struct {
 	msg          *Message
 	gasRemaining uint64
 	initialGas   uint64
-	state        vm.StateDB
+	state        stateDB
 	evm          *vm.EVM
 }
 
@@ -219,7 +224,7 @@ func NewStateTransition(evm *vm.EVM, msg *Message, gp *GasPool) *StateTransition
 		gp:    gp,
 		evm:   evm,
 		msg:   msg,
-		state: evm.StateDB,
+		state: evm.StateDB.(stateDB),
 	}
 }
 
