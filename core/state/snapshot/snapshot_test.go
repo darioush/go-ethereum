@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/holiman/uint256"
+	"github.com/stretchr/testify/require"
 )
 
 // randomHash generates a random blob of data and returns it as a hash.
@@ -488,4 +489,41 @@ func TestReadStateDuringFlattening(t *testing.T) {
 	case <-time.NewTimer(time.Millisecond * 300).C:
 		t.Fatal("Unexpected blocker")
 	}
+}
+
+func TestXxx(t *testing.T) {
+	// Create a starting base layer and a snapshot tree out of it
+	require := require.New(t)
+
+	base := &diskLayer{
+		diskdb: rawdb.NewMemoryDatabase(),
+		root:   common.HexToHash("0x00"),
+		cache:  fastcache.New(1024 * 500),
+	}
+	snaps := &Tree{
+		layers: map[common.Hash]snapshot{
+			base.root: base,
+		},
+	}
+
+	// base -> r1 -> r2 -> r3 -> r4
+	root1 := common.HexToHash("0x01")
+	root2 := common.HexToHash("0x02")
+	root3 := common.HexToHash("0x03")
+	root4 := common.HexToHash("0x04")
+	require.NoError(snaps.Update(root1, base.root, nil, nil, nil))
+	require.NoError(snaps.Update(root2, root1, nil, nil, nil))
+	require.NoError(snaps.Update(root3, root2, nil, nil, nil))
+	require.NoError(snaps.Update(root4, root3, nil, nil, nil))
+
+	// Maybe it's also possible to directly create r4 via r1
+	// base -> r1 -> r2 -> r3 -> r4
+	//           \______________/
+	require.NoError(snaps.Update(root4, root1, nil, nil, nil))
+	require.NotNil(snaps.Snapshot(root4))
+
+	// If we flatten at r3, because r1 gets flattened through,
+	// r4 will be discarded, unfortunately.
+	snaps.Cap(root3, 1)
+	require.NotNil(snaps.Snapshot(root4))
 }
