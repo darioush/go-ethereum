@@ -90,10 +90,10 @@ func enable1884(jt *JumpTable) {
 	}
 }
 
-func opSelfBalance(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opSelfBalance(pc uint64, interpreter *EVMInterpreter, scope *ScopeContext) (uint64, []byte, error) {
 	balance := interpreter.evm.StateDB.GetBalance(scope.Contract.Address())
 	scope.Stack.push(balance)
-	return nil, nil
+	return pc, nil, nil
 }
 
 // enable1344 applies EIP-1344 (ChainID Opcode)
@@ -109,10 +109,10 @@ func enable1344(jt *JumpTable) {
 }
 
 // opChainID implements CHAINID opcode
-func opChainID(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opChainID(pc uint64, interpreter *EVMInterpreter, scope *ScopeContext) (uint64, []byte, error) {
 	chainId, _ := uint256.FromBig(interpreter.evm.chainConfig.ChainID)
 	scope.Stack.push(chainId)
-	return nil, nil
+	return pc, nil, nil
 }
 
 // enable2200 applies EIP-2200 (Rebalance net-metered SSTORE)
@@ -200,30 +200,30 @@ func enable1153(jt *JumpTable) {
 }
 
 // opTload implements TLOAD opcode
-func opTload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opTload(pc uint64, interpreter *EVMInterpreter, scope *ScopeContext) (uint64, []byte, error) {
 	loc := scope.Stack.peek()
 	hash := common.Hash(loc.Bytes32())
 	val := interpreter.evm.StateDB.GetTransientState(scope.Contract.Address(), hash)
 	loc.SetBytes(val.Bytes())
-	return nil, nil
+	return pc, nil, nil
 }
 
 // opTstore implements TSTORE opcode
-func opTstore(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opTstore(pc uint64, interpreter *EVMInterpreter, scope *ScopeContext) (uint64, []byte, error) {
 	if interpreter.readOnly {
-		return nil, ErrWriteProtection
+		return pc, nil, ErrWriteProtection
 	}
 	loc := scope.Stack.pop()
 	val := scope.Stack.pop()
 	interpreter.evm.StateDB.SetTransientState(scope.Contract.Address(), loc.Bytes32(), val.Bytes32())
-	return nil, nil
+	return pc, nil, nil
 }
 
 // opBaseFee implements BASEFEE opcode
-func opBaseFee(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opBaseFee(pc uint64, interpreter *EVMInterpreter, scope *ScopeContext) (uint64, []byte, error) {
 	baseFee, _ := uint256.FromBig(interpreter.evm.Context.BaseFee)
 	scope.Stack.push(baseFee)
-	return nil, nil
+	return pc, nil, nil
 }
 
 // enable3855 applies EIP-3855 (PUSH0 opcode)
@@ -238,9 +238,9 @@ func enable3855(jt *JumpTable) {
 }
 
 // opPush0 implements the PUSH0 opcode
-func opPush0(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opPush0(pc uint64, interpreter *EVMInterpreter, scope *ScopeContext) (uint64, []byte, error) {
 	scope.Stack.push(new(uint256.Int))
-	return nil, nil
+	return pc, nil, nil
 }
 
 // enable3860 enables "EIP-3860: Limit and meter initcode"
@@ -264,7 +264,7 @@ func enable5656(jt *JumpTable) {
 }
 
 // opMcopy implements the MCOPY opcode (https://eips.ethereum.org/EIPS/eip-5656)
-func opMcopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opMcopy(pc uint64, interpreter *EVMInterpreter, scope *ScopeContext) (uint64, []byte, error) {
 	var (
 		dst    = scope.Stack.pop()
 		src    = scope.Stack.pop()
@@ -273,11 +273,11 @@ func opMcopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 	// These values are checked for overflow during memory expansion calculation
 	// (the memorySize function on the opcode).
 	scope.Memory.Copy(dst.Uint64(), src.Uint64(), length.Uint64())
-	return nil, nil
+	return pc, nil, nil
 }
 
 // opBlobHash implements the BLOBHASH opcode
-func opBlobHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opBlobHash(pc uint64, interpreter *EVMInterpreter, scope *ScopeContext) (uint64, []byte, error) {
 	index := scope.Stack.peek()
 	if index.LtUint64(uint64(len(interpreter.evm.TxContext.BlobHashes))) {
 		blobHash := interpreter.evm.TxContext.BlobHashes[index.Uint64()]
@@ -285,14 +285,14 @@ func opBlobHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	} else {
 		index.Clear()
 	}
-	return nil, nil
+	return pc, nil, nil
 }
 
 // opBlobBaseFee implements BLOBBASEFEE opcode
-func opBlobBaseFee(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opBlobBaseFee(pc uint64, interpreter *EVMInterpreter, scope *ScopeContext) (uint64, []byte, error) {
 	blobBaseFee, _ := uint256.FromBig(interpreter.evm.Context.BlobBaseFee)
 	scope.Stack.push(blobBaseFee)
-	return nil, nil
+	return pc, nil, nil
 }
 
 // enable4844 applies EIP-4844 (BLOBHASH opcode)
@@ -326,7 +326,7 @@ func enable6780(jt *JumpTable) {
 	}
 }
 
-func opExtCodeCopyEIP4762(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opExtCodeCopyEIP4762(pc uint64, interpreter *EVMInterpreter, scope *ScopeContext) (uint64, []byte, error) {
 	var (
 		stack      = scope.Stack
 		a          = stack.pop()
@@ -348,46 +348,46 @@ func opExtCodeCopyEIP4762(pc *uint64, interpreter *EVMInterpreter, scope *ScopeC
 	statelessGas := interpreter.evm.AccessEvents.CodeChunksRangeGas(addr, copyOffset, nonPaddedCopyLength, uint64(len(contract.Code)), false)
 	if !scope.Contract.UseGas(statelessGas, interpreter.evm.Config.Tracer, tracing.GasChangeUnspecified) {
 		scope.Contract.Gas = 0
-		return nil, ErrOutOfGas
+		return pc, nil, ErrOutOfGas
 	}
 	scope.Memory.Set(memOffset.Uint64(), length.Uint64(), paddedCodeCopy)
 
-	return nil, nil
+	return pc, nil, nil
 }
 
 // opPush1EIP4762 handles the special case of PUSH1 opcode for EIP-4762, which
 // need not worry about the adjusted bound logic when adding the PUSHDATA to
 // the list of access events.
-func opPush1EIP4762(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opPush1EIP4762(pc uint64, interpreter *EVMInterpreter, scope *ScopeContext) (uint64, []byte, error) {
 	var (
 		codeLen = uint64(len(scope.Contract.Code))
 		integer = new(uint256.Int)
 	)
-	*pc += 1
-	if *pc < codeLen {
-		scope.Stack.push(integer.SetUint64(uint64(scope.Contract.Code[*pc])))
+	pc += 1
+	if pc < codeLen {
+		scope.Stack.push(integer.SetUint64(uint64(scope.Contract.Code[pc])))
 
-		if !scope.Contract.IsDeployment && *pc%31 == 0 {
+		if !scope.Contract.IsDeployment && pc%31 == 0 {
 			// touch next chunk if PUSH1 is at the boundary. if so, *pc has
 			// advanced past this boundary.
 			contractAddr := scope.Contract.Address()
-			statelessGas := interpreter.evm.AccessEvents.CodeChunksRangeGas(contractAddr, *pc+1, uint64(1), uint64(len(scope.Contract.Code)), false)
+			statelessGas := interpreter.evm.AccessEvents.CodeChunksRangeGas(contractAddr, pc+1, uint64(1), uint64(len(scope.Contract.Code)), false)
 			if !scope.Contract.UseGas(statelessGas, interpreter.evm.Config.Tracer, tracing.GasChangeUnspecified) {
 				scope.Contract.Gas = 0
-				return nil, ErrOutOfGas
+				return pc, nil, ErrOutOfGas
 			}
 		}
 	} else {
 		scope.Stack.push(integer.Clear())
 	}
-	return nil, nil
+	return pc, nil, nil
 }
 
 func makePushEIP4762(size uint64, pushByteSize int) executionFunc {
-	return func(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	return func(pc uint64, interpreter *EVMInterpreter, scope *ScopeContext) (uint64, []byte, error) {
 		var (
 			codeLen = len(scope.Contract.Code)
-			start   = min(codeLen, int(*pc+1))
+			start   = min(codeLen, int(pc+1))
 			end     = min(codeLen, start+pushByteSize)
 		)
 		scope.Stack.push(new(uint256.Int).SetBytes(
@@ -402,12 +402,12 @@ func makePushEIP4762(size uint64, pushByteSize int) executionFunc {
 			statelessGas := interpreter.evm.AccessEvents.CodeChunksRangeGas(contractAddr, uint64(start), uint64(pushByteSize), uint64(len(scope.Contract.Code)), false)
 			if !scope.Contract.UseGas(statelessGas, interpreter.evm.Config.Tracer, tracing.GasChangeUnspecified) {
 				scope.Contract.Gas = 0
-				return nil, ErrOutOfGas
+				return pc, nil, ErrOutOfGas
 			}
 		}
 
-		*pc += size
-		return nil, nil
+		pc += size
+		return pc, nil, nil
 	}
 }
 
@@ -708,7 +708,7 @@ func enableEOF(jt *JumpTable) {
 }
 
 // opExtCodeCopyEIP7702 implements the EIP-7702 variation of opExtCodeCopy.
-func opExtCodeCopyEIP7702(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opExtCodeCopyEIP7702(pc uint64, interpreter *EVMInterpreter, scope *ScopeContext) (uint64, []byte, error) {
 	var (
 		stack      = scope.Stack
 		a          = stack.pop()
@@ -727,27 +727,27 @@ func opExtCodeCopyEIP7702(pc *uint64, interpreter *EVMInterpreter, scope *ScopeC
 	codeCopy := getData(code, uint64CodeOffset, length.Uint64())
 	scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)
 
-	return nil, nil
+	return pc, nil, nil
 }
 
 // opExtCodeSizeEIP7702 implements the EIP-7702 variation of opExtCodeSize.
-func opExtCodeSizeEIP7702(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opExtCodeSizeEIP7702(pc uint64, interpreter *EVMInterpreter, scope *ScopeContext) (uint64, []byte, error) {
 	slot := scope.Stack.peek()
 	code := interpreter.evm.StateDB.GetCode(common.Address(slot.Bytes20()))
 	if _, ok := types.ParseDelegation(code); ok {
 		code = types.DelegationPrefix[:2]
 	}
 	slot.SetUint64(uint64(len(code)))
-	return nil, nil
+	return pc, nil, nil
 }
 
 // opExtCodeHashEIP7702 implements the EIP-7702 variation of opExtCodeHash.
-func opExtCodeHashEIP7702(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opExtCodeHashEIP7702(pc uint64, interpreter *EVMInterpreter, scope *ScopeContext) (uint64, []byte, error) {
 	slot := scope.Stack.peek()
 	addr := common.Address(slot.Bytes20())
 	if interpreter.evm.StateDB.Empty(addr) {
 		slot.Clear()
-		return nil, nil
+		return pc, nil, nil
 	}
 	code := interpreter.evm.StateDB.GetCode(addr)
 	if _, ok := types.ParseDelegation(code); ok {
@@ -757,7 +757,7 @@ func opExtCodeHashEIP7702(pc *uint64, interpreter *EVMInterpreter, scope *ScopeC
 		// Otherwise, return normal code hash.
 		slot.SetBytes(interpreter.evm.StateDB.GetCodeHash(addr).Bytes())
 	}
-	return nil, nil
+	return pc, nil, nil
 }
 
 // enable7702 the EIP-7702 changes to support delegation designators.

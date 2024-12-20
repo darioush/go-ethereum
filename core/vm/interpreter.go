@@ -315,7 +315,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		}
 
 		// execute the operation
-		res, err = operation.execute(&pc, in, callContext)
+		pc, res, err = operation.execute(pc, in, callContext)
 		if err != nil {
 			break
 		}
